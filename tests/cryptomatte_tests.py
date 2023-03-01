@@ -523,31 +523,40 @@ class CryptomatteSetup(unittest.TestCase):
         self.output_file_name = os.path.join(tempfile.gettempdir(), "result.exr")
 
         ai.AiBegin()
-        ai.AiMsgSetConsoleFlags(ai.AI_LOG_NONE)
-        ai.AiMsgSetConsoleFlags(ai.AI_LOG_WARNINGS | ai.AI_LOG_ERRORS)
+        self.universe = ai.AiUniverse()
+        ai.AiMsgSetConsoleFlags(self.universe, ai.AI_LOG_NONE)
 
-        options = ai.AiUniverseGetOptions()
-        ai.AiNodeSetBool(options, "skip_license_check", True)
-        ai.AiNodeSetInt(options, "xres", 16);
-        ai.AiNodeSetInt(options, "yres", 16);
-
-        self.my_camera = ai.AiNode("persp_camera", "my_camera", None)
-        self.my_filter = ai.AiNode("gaussian_filter", "my_filter", None)
-        self.my_driver = ai.AiNode("driver_exr", "my_driver", None)
-        self.my_cryptomatte = ai.AiNode("cryptomatte", "my_cryptomatte", None)
+        self.my_camera = ai.AiNode(self.universe, "persp_camera", "my_camera", None)
+        self.my_filter = ai.AiNode(self.universe, "gaussian_filter", "my_filter", None)
+        self.my_driver = ai.AiNode(self.universe, "driver_exr", "my_driver", None)
+        self.my_cryptomatte = ai.AiNode(self.universe, "cryptomatte", "my_cryptomatte", None)
 
         ai.AiNodeSetStr(self.my_driver, "filename", self.output_file_name)
-        ai.AiNodeSetPtr(options, "aov_shaders", self.my_cryptomatte)
 
+        self.options = ai.AiUniverseGetOptions(self.universe)
+        ai.AiNodeSetPtr(self.options, "aov_shaders", self.my_cryptomatte)
+        ai.AiNodeSetBool(self.options, "skip_license_check", True)
+        ai.AiNodeSetInt(self.options, "xres", 16);
+        ai.AiNodeSetInt(self.options, "yres", 16);
+
+        self.assertTrue(self.universe, ("No universe."))
+        self.assertTrue(self.options, ("No options."))
+        self.assertTrue(self.my_camera, ("Camera not created."))
         self.assertTrue(
-            self.my_cryptomatte, 
+            self.my_cryptomatte,
             ("Cryptomatte node could not be created, plugin may not be "
              "loaded in Python. (There may be binary compatibily issues "
-             "with Python). "))
+             "with Python)."))
+
+        self.render_session = ai.AiRenderSession(self.universe, ai.AI_SESSION_INTERACTIVE)
 
     def tearDown(self):
         if os.path.exists(self.output_file_name):
             os.remove(self.output_file_name)
+
+        ai.AiRenderEnd(self.render_session)
+        ai.AiRenderSessionDestroy(self.render_session)
+        ai.AiUniverseDestroy(self.universe)
         ai.AiEnd()
         
     def list_to_array(self, python_list):
@@ -628,14 +637,14 @@ class CryptomatteSetup(unittest.TestCase):
         """ Tests setup of outputs occurs correctly with a full precision driver 
         HALF aovs should be preserved, but no new AOVs should be set to HALF.
         """
-        options = ai.AiUniverseGetOptions()
         orig_num = len(outputs_init)
 
-        ai.AiNodeSetArray(options, "outputs", self.list_to_array(outputs_init));
+        ai.AiNodeSetArray(self.options, "outputs", self.list_to_array(outputs_init));
 
-        ai.AiRender()
+        result = ai.AiRender(self.render_session)
+        self.assertEqual(result, 0)
 
-        found_outputs = self.array_to_list(ai.AiNodeGetArray(options, "outputs"))
+        found_outputs = self.array_to_list(ai.AiNodeGetArray(self.options, "outputs"))
 
         # check original aovs
         self.assertEqual(correct_outputs[:orig_num], found_outputs[:orig_num])
